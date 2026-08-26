@@ -92,6 +92,28 @@ def claim_help(help_id):
     return jsonify({"help_request": req.to_dict()})
 
 
+@help_bp.route("/help/<int:help_id>/unclaim", methods=["PATCH"])
+@login_required
+def unclaim_help(help_id):
+    user = get_current_user()
+    req = HelpRequest.query.get(help_id)
+    if not req:
+        return jsonify({"error": "Help request not found"}), 404
+
+    if req.claimer_id != user.id:
+        return jsonify({"error": "Only the claimer can unclaim this request"}), 403
+
+    if req.status != "claimed":
+        return jsonify({"error": "Only claimed requests can be unclaimed"}), 409
+
+    req.claimer_id = None
+    req.status = "open"
+    req.claimed_at = None
+    db.session.commit()
+
+    return jsonify({"help_request": req.to_dict()})
+
+
 @help_bp.route("/help/<int:help_id>/resolve", methods=["PATCH"])
 @login_required
 def resolve_help(help_id):

@@ -130,6 +130,8 @@
         actionBtn = `<button onclick="claim(${h.id})">I'll help</button>`;
       } else if (h.status === 'claimed' && h.poster_id === currentUserId) {
         actionBtn = `<button onclick="resolve(${h.id})">Mark resolved</button>`;
+      } else if (h.status === 'claimed' && h.claimer_id === currentUserId) {
+        actionBtn = `<button class="secondary" onclick="unclaim(${h.id})">Not me — undo</button>`;
       }
 
       return `
@@ -184,6 +186,11 @@
 
   async function claim(id) {
     await fetch(`/help/${id}/claim`, { method: 'PATCH' });
+    loadHelp();
+  }
+
+  async function unclaim(id) {
+    await fetch(`/help/${id}/unclaim`, { method: 'PATCH' });
     loadHelp();
   }
 
