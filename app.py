@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, redirect, url_for
 from models import db
 
 
@@ -26,6 +26,10 @@ def create_app():
     app.register_blueprint(help_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(profile_bp)
+
+    @app.route("/")
+    def index():
+        return redirect(url_for("auth.login"))
 
     @app.route("/health")
     def health():
