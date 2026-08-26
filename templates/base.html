@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <title>{% block title %}LaunchPad{% endblock %}</title>
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="brand-mark">🚀</span><span class="brand-name">LaunchPad</span>
+      </div>
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+
+  <div class="splash-overlay" id="splash-overlay">
+    <div class="splash-content">
+      <div class="splash-logo">🚀</div>
+      <div class="splash-title">LaunchPad</div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>

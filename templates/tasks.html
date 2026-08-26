@@ -1,0 +1,99 @@
+{% extends "app_base.html" %}
+{% block title %}Tasks — LaunchPad{% endblock %}
+{% block container_extra %} narrow{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>Add a Task</h3>
+  <form class="inline" id="add-form">
+    <input type="text" id="title" placeholder="Task title" required>
+    <select id="priority">
+      <option value="">No priority</option>
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+    </select>
+    <input type="date" id="due_date">
+    <button type="submit">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Your Tasks</h3>
+  <div id="task-list"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function loadTasks() {
+    const res = await fetch('/tasks');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const data = await res.json();
+
+    const list = document.getElementById('task-list');
+    if (!data.tasks.length) {
+      list.innerHTML = '<p class="empty">You haven\'t created any tasks yet.</p>';
+      return;
+    }
+
+    list.innerHTML = data.tasks.map(t => `
+      <div class="task-item">
+        <div>
+          <span class="task-title ${t.status === 'done' ? 'done' : ''}">${escapeHtml(t.title)}</span>
+          ${t.priority ? `<span class="badge">${t.priority}</span>` : ''}
+          ${t.due_date ? `<span class="due">due ${t.due_date}</span>` : ''}
+        </div>
+        <div class="task-actions">
+          <select onchange="updateStatus(${t.id}, this.value)">
+            <option value="not_started" ${t.status === 'not_started' ? 'selected' : ''}>Not started</option>
+            <option value="in_progress" ${t.status === 'in_progress' ? 'selected' : ''}>In progress</option>
+            <option value="done" ${t.status === 'done' ? 'selected' : ''}>Done</option>
+          </select>
+          <button class="danger" onclick="deleteTask(${t.id})">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  document.getElementById('add-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = document.getElementById('title').value.trim();
+    const priority = document.getElementById('priority').value;
+    const due_date = document.getElementById('due_date').value;
+    if (!title) return;
+
+    await fetch('/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, priority: priority || null, due_date: due_date || null })
+    });
+
+    document.getElementById('title').value = '';
+    document.getElementById('priority').value = '';
+    document.getElementById('due_date').value = '';
+    loadTasks();
+  });
+
+  async function updateStatus(id, status) {
+    await fetch(`/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    loadTasks();
+  }
+
+  async function deleteTask(id) {
+    await fetch(`/tasks/${id}`, { method: 'DELETE' });
+    loadTasks();
+  }
+
+  loadTasks();
+</script>
+{% endblock %}

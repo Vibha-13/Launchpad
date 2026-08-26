@@ -1,0 +1,200 @@
+{% extends "app_base.html" %}
+{% block title %}Help Feed — LaunchPad{% endblock %}
+{% block container_extra %} narrow{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>Ask for Help</h3>
+  <form class="stack" id="post-form">
+    <input type="text" id="title" placeholder="What do you need help with?" required>
+    <textarea id="description" placeholder="Add context (optional)" rows="2"></textarea>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+      <select id="topic" required>
+        <option value="">Topic...</option>
+        <option value="development">Development</option>
+        <option value="database">Database</option>
+        <option value="git">Git</option>
+        <option value="deployment">Deployment</option>
+        <option value="documentation">Documentation</option>
+        <option value="other">Other</option>
+      </select>
+      <select id="urgency">
+        <option value="low">Low urgency</option>
+        <option value="medium" selected>Medium urgency</option>
+        <option value="high">High urgency</option>
+      </select>
+      <button type="submit">Post</button>
+    </div>
+    <div class="tips-box" id="tips-box">
+      <strong>Good to include:</strong>
+      <ul id="tips-list"></ul>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="help-top" style="margin-bottom:0.9rem;">
+    <h3 style="margin:0;">Help Feed</h3>
+    <div style="display:flex; gap:0.5rem;">
+      <select id="filter-status">
+        <option value="">All statuses</option>
+        <option value="open">Open</option>
+        <option value="claimed">Claimed</option>
+        <option value="resolved">Resolved</option>
+      </select>
+      <select id="filter-topic">
+        <option value="">All topics</option>
+        <option value="development">Development</option>
+        <option value="database">Database</option>
+        <option value="git">Git</option>
+        <option value="deployment">Deployment</option>
+        <option value="documentation">Documentation</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+  </div>
+  <div id="help-list"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentUserId = null;
+
+  const TOPIC_TIPS = {
+    development: ['What you\'re building and the language/framework', 'The exact error message or unexpected behavior', 'What you\'ve already tried'],
+    database: ['Which database and version', 'The query or schema involved', 'Error message or unexpected result'],
+    git: ['The command you ran', 'What you expected vs. what happened', 'Branch/remote setup if relevant'],
+    deployment: ['Where you\'re deploying to', 'Build or deploy logs / error output', 'What changed since it last worked'],
+    documentation: ['Which doc or section', 'What\'s missing, unclear, or outdated', 'A link if it\'s already written somewhere'],
+    other: ['A clear description of the problem', 'Any relevant context or links', 'What outcome you\'re hoping for'],
+  };
+
+  function nextStepBlock(h) {
+    const tips = TOPIC_TIPS[h.topic] || TOPIC_TIPS.other;
+    const isPoster = h.poster_id === currentUserId;
+    const contactName = isPoster ? h.claimer_name : h.poster_name;
+    const contactEmail = isPoster ? h.claimer_email : h.poster_email;
+    const heading = isPoster ? `Being helped by ${escapeHtml(contactName)}` : `You're helping ${escapeHtml(contactName)}`;
+    const shareLabel = isPoster ? 'Share' : 'Ask for';
+
+    return `
+      <div class="next-step-box">
+        <div class="next-step-heading">${heading}</div>
+        ${contactEmail ? `<div class="next-step-contact">📧 ${escapeHtml(contactEmail)}</div>` : ''}
+        <div class="next-step-label">Suggested next step</div>
+        <div class="meta" style="margin-top:0.1rem;">${shareLabel}:</div>
+        <ul class="next-step-list">
+          ${tips.map(t => `<li>${t}</li>`).join('')}
+        </ul>
+      </div>`;
+  }
+
+  const topicSelect = document.getElementById('topic');
+  const tipsBox = document.getElementById('tips-box');
+  const tipsList = document.getElementById('tips-list');
+
+  topicSelect.addEventListener('change', () => {
+    const tips = TOPIC_TIPS[topicSelect.value];
+    if (!tips) { tipsBox.classList.remove('visible'); return; }
+    tipsList.innerHTML = tips.map(t => `<li>${t}</li>`).join('');
+    tipsBox.classList.add('visible');
+  });
+
+  async function loadMe() {
+    const res = await fetch('/me');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const data = await res.json();
+    currentUserId = data.user.id;
+  }
+
+  async function loadHelp() {
+    const status = document.getElementById('filter-status').value;
+    const topic = document.getElementById('filter-topic').value;
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (topic) params.set('topic', topic);
+
+    const res = await fetch('/help' + (params.toString() ? `?${params}` : ''));
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const data = await res.json();
+
+    const list = document.getElementById('help-list');
+    if (!data.help_requests.length) {
+      list.innerHTML = '<p class="empty">No one needs help right now. Great teamwork! 🎉</p>';
+      return;
+    }
+
+    list.innerHTML = data.help_requests.map(h => {
+      let actionBtn = '';
+      if (h.status === 'open' && h.poster_id !== currentUserId) {
+        actionBtn = `<button onclick="claim(${h.id})">I'll help</button>`;
+      } else if (h.status === 'claimed' && h.poster_id === currentUserId) {
+        actionBtn = `<button onclick="resolve(${h.id})">Mark resolved</button>`;
+      }
+
+      return `
+        <div class="help-item" style="display:block;">
+          <div class="help-top">
+            <div>
+              <strong>${escapeHtml(h.title)}</strong>
+              <span class="badge ${h.urgency === 'high' ? 'urgent' : ''}">${h.urgency}</span>
+              <span class="badge">${h.topic}</span>
+              <span class="badge status-${h.status}">${h.status}</span>
+            </div>
+            ${actionBtn}
+          </div>
+          ${h.description ? `<div class="meta">${escapeHtml(h.description)}</div>` : ''}
+          <div class="meta">Posted by ${escapeHtml(h.poster_name)}</div>
+          ${h.status === 'claimed' && h.claimer_name ? nextStepBlock(h) : ''}
+        </div>`;
+    }).join('');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  document.getElementById('post-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = document.getElementById('title').value.trim();
+    const description = document.getElementById('description').value.trim();
+    const topic = document.getElementById('topic').value;
+    const urgency = document.getElementById('urgency').value;
+    if (!title || !topic) return;
+
+    const res = await fetch('/help', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, topic, urgency })
+    });
+
+    if (res.ok) {
+      document.getElementById('title').value = '';
+      document.getElementById('description').value = '';
+      document.getElementById('topic').value = '';
+      tipsBox.classList.remove('visible');
+      loadHelp();
+    }
+  });
+
+  document.getElementById('filter-status').addEventListener('change', loadHelp);
+  document.getElementById('filter-topic').addEventListener('change', loadHelp);
+
+  async function claim(id) {
+    await fetch(`/help/${id}/claim`, { method: 'PATCH' });
+    loadHelp();
+  }
+
+  async function resolve(id) {
+    await fetch(`/help/${id}/resolve`, { method: 'PATCH' });
+    loadHelp();
+  }
+
+  (async () => {
+    await loadMe();
+    await loadHelp();
+  })();
+</script>
+{% endblock %}

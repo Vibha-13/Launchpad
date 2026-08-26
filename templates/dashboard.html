@@ -1,0 +1,88 @@
+{% extends "app_base.html" %}
+{% block title %}Dashboard — LaunchPad{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>Today's Progress</h3>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+  <p id="progress-text" class="meta"></p>
+</div>
+
+<div class="card">
+  <div class="stats-row">
+    <div class="stat"><strong id="tasks-completed">0</strong>Tasks completed</div>
+    <div class="stat"><strong id="people-helped">0</strong>People helped</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Quick Add Task</h3>
+    <form class="inline" id="quick-add-form">
+      <input type="text" id="quick-add-title" placeholder="What are you working on?" required>
+      <button type="submit">Add</button>
+    </form>
+    <div id="task-list" style="margin-top:1rem;"></div>
+  </div>
+
+  <div class="card">
+    <h3>Recent Help Requests</h3>
+    <div id="help-list"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function loadDashboard() {
+    const res = await fetch('/api/dashboard');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const data = await res.json();
+
+    document.getElementById('progress-fill').style.width = data.progress + '%';
+    const doneCount = data.stats.tasks_completed;
+    const totalCount = data.tasks.length;
+    document.getElementById('progress-text').textContent =
+      totalCount ? `${doneCount} of ${totalCount} tasks completed · ${data.progress}%` : 'No tasks yet today';
+    document.getElementById('tasks-completed').textContent = data.stats.tasks_completed;
+    document.getElementById('people-helped').textContent = data.stats.people_helped;
+
+    const taskList = document.getElementById('task-list');
+    taskList.innerHTML = data.tasks.length
+      ? data.tasks.slice(0, 5).map(t => `
+          <div class="task-item">
+            <span>${t.status === 'done' ? '✅' : '○'} ${escapeHtml(t.title)}</span>
+            <span class="badge">${t.status.replace('_',' ')}</span>
+          </div>`).join('')
+      : '<p class="empty">No tasks yet today — add one to start tracking your progress.</p>';
+
+    const helpList = document.getElementById('help-list');
+    helpList.innerHTML = data.recent_help.length
+      ? data.recent_help.map(h => `
+          <div class="help-item">
+            <span>${escapeHtml(h.title)} <span class="badge">${h.topic}</span></span>
+          </div>`).join('')
+      : '<p class="empty">No one needs help right now. Great teamwork! 🎉</p>';
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  document.getElementById('quick-add-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = document.getElementById('quick-add-title').value.trim();
+    if (!title) return;
+    await fetch('/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title })
+    });
+    document.getElementById('quick-add-title').value = '';
+    loadDashboard();
+  });
+
+  loadDashboard();
+</script>
+{% endblock %}

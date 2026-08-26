@@ -1,0 +1,59 @@
+{% extends "app_base.html" %}
+{% block title %}Profile — LaunchPad{% endblock %}
+{% block container_extra %} narrow{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 id="user-name"></h2>
+  <p id="user-email" class="meta"></p>
+</div>
+
+<div class="card">
+  <div class="stats-row">
+    <div class="stat"><strong id="tasks-completed">0</strong>Tasks Completed</div>
+    <div class="stat"><strong id="people-helped">0</strong>People Helped</div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Activity</h3>
+  <div id="activity-list"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const EVENT_LABELS = {
+    task_created: 'Created a task',
+    task_completed: 'Completed a task',
+    help_posted: 'Asked for help',
+    help_claimed: 'Claimed a help request',
+    help_resolved: 'Resolved a help request',
+  };
+
+  async function loadProfile() {
+    const res = await fetch('/api/profile');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const data = await res.json();
+
+    document.getElementById('user-name').textContent = data.user.name;
+    document.getElementById('user-email').textContent = data.user.email;
+    document.getElementById('tasks-completed').textContent = data.stats.tasks_completed;
+    document.getElementById('people-helped').textContent = data.stats.people_helped;
+
+    const list = document.getElementById('activity-list');
+    if (!data.activity.length) {
+      list.innerHTML = '<p class="empty">No activity yet — keep going!</p>';
+      return;
+    }
+
+    list.innerHTML = data.activity.map(a => `
+      <div class="activity-item">
+        ${EVENT_LABELS[a.event_type] || a.event_type}
+        <div class="meta">${new Date(a.created_at).toLocaleString()}</div>
+      </div>
+    `).join('');
+  }
+
+  loadProfile();
+</script>
+{% endblock %}
