@@ -9,26 +9,100 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="topbar">
-      <div class="topbar-inner">
-        <a class="brand" href="/dashboard">
-          <span class="brand-mark">🚀</span><span class="brand-name">LaunchPad</span>
+    <aside class="sidebar">
+      <a class="sidebar-brand" href="/dashboard" style="text-decoration:none;">
+        <span class="brand-mark">{% include "_brand_mark.html" %}</span>
+        <span class="sidebar-brand-text">
+          <span class="sidebar-brand-name">LaunchPad</span>
+          <span class="sidebar-tagline">Get unstuck. Help others.</span>
+        </span>
+      </a>
+      <nav class="sidebar-nav">
+        <a href="/dashboard" class="{{ 'active' if request.path == '/dashboard' else '' }}">
+          <span class="sidebar-nav-label"><span class="sidebar-nav-icon">&#9673;</span>Dashboard</span>
         </a>
-        <nav class="main-nav">
-          <a href="/dashboard" class="{{ 'active' if request.path == '/dashboard' else '' }}">Dashboard</a>
-          <a href="/tasks-page" class="{{ 'active' if request.path == '/tasks-page' else '' }}">Tasks</a>
-          <a href="/help-page" class="{{ 'active' if request.path == '/help-page' else '' }}">Help Feed</a>
-          <a href="/profile-page" class="{{ 'active' if request.path == '/profile-page' else '' }}">Profile</a>
-        </nav>
-        <form method="POST" action="/logout" class="logout-form">
-          <button class="btn-ghost" type="submit">Log out</button>
-        </form>
+        <a href="/tasks-page" class="{{ 'active' if request.path == '/tasks-page' else '' }}">
+          <span class="sidebar-nav-label"><span class="sidebar-nav-icon">&#10003;</span>Tasks</span>
+        </a>
+        <a href="/help-page" class="{{ 'active' if request.path == '/help-page' else '' }}">
+          <span class="sidebar-nav-label"><span class="sidebar-nav-icon">&#9873;</span>Help Feed</span>
+          <span class="sidebar-count" id="help-count" style="display:none;"></span>
+        </a>
+        <a href="/people-page" class="{{ 'active' if request.path == '/people-page' else '' }}">
+          <span class="sidebar-nav-label"><span class="sidebar-nav-icon">&#128101;</span>People</span>
+        </a>
+        <a href="/profile-page" class="{{ 'active' if request.path == '/profile-page' else '' }}">
+          <span class="sidebar-nav-label"><span class="sidebar-nav-icon">&#9737;</span>Profile</span>
+        </a>
+        <a href="/settings-page" class="{{ 'active' if request.path == '/settings-page' else '' }}">
+          <span class="sidebar-nav-label"><span class="sidebar-nav-icon">&#9881;</span>Settings</span>
+        </a>
+      </nav>
+      <div class="sidebar-cta">
+        <span class="sidebar-cta-emoji">&#127775;</span>
+        <h4>Be a hero today</h4>
+        <ul>
+          <li>Help someone</li>
+          <li>Learn together</li>
+          <li>Grow together</li>
+        </ul>
       </div>
-    </header>
-    <main class="container{% block container_extra %}{% endblock %}">
-      {% block content %}{% endblock %}
-    </main>
+      <form method="POST" action="/logout" class="logout-form">
+        <button class="logout-link" type="submit">Log out</button>
+      </form>
+    </aside>
+
+    <div class="main-area">
+      <div class="topstrip">
+        <div class="search-wrap">
+          <span class="search-icon">&#128269;</span>
+          <input type="text" id="global-search" placeholder="Search anything...">
+          <div class="search-results" id="search-results"></div>
+        </div>
+        <div class="notif-bell-wrap">
+          <div class="notif-bell" id="notif-bell">
+            &#128276;
+            <span class="notif-dot" id="notif-dot" style="display:none;"></span>
+          </div>
+          <div class="notif-dropdown" id="notif-dropdown">
+            <div class="notif-dropdown-header">
+              <h4>Notifications</h4>
+              <button class="notif-mark-all" id="notif-mark-all">Mark all read</button>
+            </div>
+            <div class="notif-list" id="notif-list"></div>
+          </div>
+        </div>
+        <div id="topstrip-avatar"></div>
+      </div>
+
+      <main class="container{% block container_extra %}{% endblock %}">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
   </div>
+  <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+  <script>
+    (async () => {
+      try {
+        const res = await fetch('/me');
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('topstrip-avatar').innerHTML = avatarHtml(data.user.name);
+
+          const helpRes = await fetch('/help?status=open');
+          if (helpRes.ok) {
+            const helpData = await helpRes.json();
+            const openCount = helpData.help_requests.filter(h => h.poster_id !== data.user.id).length;
+            const countEl = document.getElementById('help-count');
+            if (openCount > 0) {
+              countEl.textContent = openCount > 9 ? '9+' : openCount;
+              countEl.style.display = 'inline-flex';
+            }
+          }
+        }
+      } catch (e) {}
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

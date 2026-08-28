@@ -37,8 +37,8 @@
 
     document.getElementById('user-name').textContent = data.user.name;
     document.getElementById('user-email').textContent = data.user.email;
-    document.getElementById('tasks-completed').textContent = data.stats.tasks_completed;
-    document.getElementById('people-helped').textContent = data.stats.people_helped;
+    animateCount(document.getElementById('tasks-completed'), data.stats.tasks_completed);
+    animateCount(document.getElementById('people-helped'), data.stats.people_helped);
 
     const list = document.getElementById('activity-list');
     if (!data.activity.length) {
@@ -52,6 +52,7 @@
         <div class="meta">${new Date(a.created_at).toLocaleString()}</div>
       </div>
     `).join('');
+    staggerRows(list, '.activity-item');
   }
 
   loadProfile();

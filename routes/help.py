@@ -1,6 +1,6 @@
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template
-from models import db, HelpRequest, HELP_TOPICS, HELP_URGENCIES, HELP_STATUSES, log_activity
+from models import db, HelpRequest, HELP_TOPICS, HELP_URGENCIES, HELP_STATUSES, log_activity, log_notification
 from routes.auth_utils import login_required, get_current_user
 
 help_bp = Blueprint("help", __name__)
@@ -87,6 +87,7 @@ def claim_help(help_id):
     req.claimed_at = datetime.utcnow()
 
     log_activity(user.id, "help_claimed", "help_request", req.id)
+    log_notification(req.poster_id, f"{user.name} is helping with \u201c{req.title}\u201d", link="/help-page")
     db.session.commit()
 
     return jsonify({"help_request": req.to_dict()})
@@ -132,6 +133,25 @@ def resolve_help(help_id):
     req.resolved_at = datetime.utcnow()
 
     log_activity(user.id, "help_resolved", "help_request", req.id)
+    if req.claimer_id:
+        log_notification(req.claimer_id, f"{user.name} marked \u201c{req.title}\u201d as resolved", link="/help-page")
     db.session.commit()
 
     return jsonify({"help_request": req.to_dict()})
+
+
+@help_bp.route("/help/<int:help_id>", methods=["DELETE"])
+@login_required
+def delete_help(help_id):
+    user = get_current_user()
+    req = HelpRequest.query.get(help_id)
+    if not req:
+        return jsonify({"error": "Help request not found"}), 404
+
+    if req.poster_id != user.id:
+        return jsonify({"error": "Only the poster can delete this request"}), 403
+
+    db.session.delete(req)
+    db.session.commit()
+
+    return jsonify({"success": True})

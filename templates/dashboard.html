@@ -1,39 +1,92 @@
 {% extends "app_base.html" %}
 {% block title %}Dashboard — LaunchPad{% endblock %}
 {% block content %}
-<div class="card">
-  <h3>Today's Progress</h3>
-  <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
-  <p id="progress-text" class="meta"></p>
+<div class="dash-header">
+  <svg class="doodle" style="top:-6px; right:160px;" width="70" height="60" viewBox="0 0 70 60" fill="none">
+    <path d="M4 50 C4 20, 34 20, 34 40 C34 55, 60 50, 60 20" stroke="#7C3AED" stroke-width="3" stroke-linecap="round"/>
+  </svg>
+  <svg class="doodle" style="top:6px; right:110px;" width="26" height="26" viewBox="0 0 26 26" fill="none">
+    <path d="M13 0 L15.5 10.5 L26 13 L15.5 15.5 L13 26 L10.5 15.5 L0 13 L10.5 10.5 Z" fill="#7ED957"/>
+  </svg>
+  <h1 class="dash-greeting" id="greeting">Hey there! &#128075;</h1>
+  <p class="dash-sub">Let's get some stuff <span class="accent-word">moving</span>.</p>
 </div>
 
 <div class="card">
-  <div class="stats-row">
-    <div class="stat"><strong id="tasks-completed">0</strong>Tasks completed</div>
-    <div class="stat"><strong id="people-helped">0</strong>People helped</div>
+  <h3>Today's progress &#128640;</h3>
+  <p id="progress-text" class="meta" style="font-size:0.95rem; font-weight:600; color:var(--ink-900);"></p>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+  <span class="progress-pill" id="progress-pill">You're making progress! &#10024;</span>
+</div>
+
+<div class="stat-tiles">
+  <div class="stat-tile purple">
+    <span class="stat-tile-icon">&#9989;</span>
+    <span class="stat-tile-num" id="tasks-completed">0</span>
+    <span class="stat-tile-label">Tasks done</span>
+    <div class="stat-tile-sub">Keep it up!</div>
+  </div>
+  <div class="stat-tile blue">
+    <span class="stat-tile-icon">&#128101;</span>
+    <span class="stat-tile-num" id="people-helped">0</span>
+    <span class="stat-tile-label">People helped</span>
+    <div class="stat-tile-sub">You're a star!</div>
+  </div>
+  <div class="stat-tile lime">
+    <span class="stat-tile-icon">&#128293;</span>
+    <span class="stat-tile-num" id="streak">0</span>
+    <span class="stat-tile-label">Day streak</span>
+    <div class="stat-tile-sub">On fire!</div>
   </div>
 </div>
 
 <div class="grid">
   <div class="card">
-    <h3>Quick Add Task</h3>
-    <form class="inline" id="quick-add-form">
+    <div class="card-head">
+      <h3>My tasks</h3>
+      <a class="view-all-link" href="/tasks-page">View all</a>
+    </div>
+    <form class="inline" id="quick-add-form" style="margin-bottom:0.9rem;">
       <input type="text" id="quick-add-title" placeholder="What are you working on?" required>
       <button type="submit">Add</button>
     </form>
-    <div id="task-list" style="margin-top:1rem;"></div>
+    <div id="task-list"></div>
   </div>
 
   <div class="card">
-    <h3>Recent Help Requests</h3>
+    <div class="card-head">
+      <h3>People who need help</h3>
+      <a class="view-all-link" href="/help-page">View all</a>
+    </div>
     <div id="help-list"></div>
   </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h3>Recent activity</h3>
+  </div>
+  <div id="activity-list"></div>
+</div>
+
+<div class="cta-banner">
+  <div class="cta-banner-label">Stuck on something?</div>
+  <div class="cta-banner-title">Ask. Share. Solve.</div>
+  <button class="lime" onclick="window.location.href='/help-page'">Create help request</button>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  const PRIORITY_ACCENT = { high: 'accent-coral', medium: 'accent-amber', low: 'accent-lime' };
+  const URGENCY_ACCENT = { high: 'accent-coral', medium: 'accent-amber', low: 'accent-blue' };
+
   async function loadDashboard() {
+    const meRes = await fetch('/me');
+    if (meRes.status === 401) { window.location.href = '/login'; return; }
+    const me = await meRes.json();
+    document.getElementById('greeting').innerHTML = `Hey ${me.user.name.split(' ')[0]}! \u{1F44B}`;
+
     const res = await fetch('/api/dashboard');
     if (res.status === 401) { window.location.href = '/login'; return; }
     const data = await res.json();
@@ -42,26 +95,59 @@
     const doneCount = data.stats.tasks_completed;
     const totalCount = data.tasks.length;
     document.getElementById('progress-text').textContent =
-      totalCount ? `${doneCount} of ${totalCount} tasks completed · ${data.progress}%` : 'No tasks yet today';
-    document.getElementById('tasks-completed').textContent = data.stats.tasks_completed;
-    document.getElementById('people-helped').textContent = data.stats.people_helped;
+      totalCount ? `${doneCount} of ${totalCount} tasks completed \u00b7 ${data.progress}%` : 'No tasks yet today';
+    document.getElementById('progress-pill').textContent =
+      data.progress >= 100 ? "All done \u2014 amazing work! \u{1F389}" :
+      data.progress >= 50 ? "You're making awesome progress! \u2728" :
+      "Let's get moving! \u{1F680}";
+
+    animateCount(document.getElementById('tasks-completed'), data.stats.tasks_completed);
+    animateCount(document.getElementById('people-helped'), data.stats.people_helped);
+    animateCount(document.getElementById('streak'), data.stats.streak);
 
     const taskList = document.getElementById('task-list');
     taskList.innerHTML = data.tasks.length
       ? data.tasks.slice(0, 5).map(t => `
-          <div class="task-item">
-            <span>${t.status === 'done' ? '✅' : '○'} ${escapeHtml(t.title)}</span>
+          <div class="accent-row ${t.status === 'done' ? 'accent-lime' : (PRIORITY_ACCENT[t.priority] || 'accent-gray')}">
+            <div style="flex:1;">
+              <div style="font-weight:600; ${t.status === 'done' ? 'text-decoration:line-through; color:var(--ink-300);' : ''}">${t.status === 'done' ? '\u2705' : '\u25cb'} ${escapeHtml(t.title)}</div>
+            </div>
             <span class="badge">${t.status.replace('_',' ')}</span>
           </div>`).join('')
-      : '<p class="empty">No tasks yet today — add one to start tracking your progress.</p>';
+      : '<p class="empty">No tasks yet today \u2014 add one to start tracking your progress.</p>';
+    staggerRows(taskList, '.accent-row');
 
     const helpList = document.getElementById('help-list');
     helpList.innerHTML = data.recent_help.length
       ? data.recent_help.map(h => `
-          <div class="help-item">
-            <span>${escapeHtml(h.title)} <span class="badge">${h.topic}</span></span>
+          <div class="accent-row ${URGENCY_ACCENT[h.urgency] || 'accent-gray'}">
+            ${avatarHtml(h.poster_name, 'sm')}
+            <div style="flex:1;">
+              <div style="font-weight:600;">${escapeHtml(h.title)}</div>
+              <div class="meta" style="margin-top:0.15rem;">
+                <span class="badge topic">${h.topic}</span>
+                <span class="badge ${h.urgency}">${h.urgency}</span>
+                &middot; ${escapeHtml(h.poster_name)}
+              </div>
+            </div>
+            <button style="flex-shrink:0;" onclick="window.location.href='/help-page'">I can help</button>
           </div>`).join('')
-      : '<p class="empty">No one needs help right now. Great teamwork! 🎉</p>';
+      : '<p class="empty">No one needs help right now. Great teamwork! \u{1F389}</p>';
+    staggerRows(helpList, '.accent-row');
+
+    const activityList = document.getElementById('activity-list');
+    const EVENT_LABELS = {
+      task_created: 'Created a task', task_completed: 'Completed a task',
+      help_posted: 'Asked for help', help_claimed: 'Claimed a help request', help_resolved: 'Resolved a help request',
+    };
+    activityList.innerHTML = data.activity.length
+      ? data.activity.slice(0, 5).map(a => `
+          <div class="task-item">
+            <span>${EVENT_LABELS[a.event_type] || a.event_type}</span>
+            <span class="meta" style="margin-top:0;">${new Date(a.created_at).toLocaleString()}</span>
+          </div>`).join('')
+      : '<p class="empty">No activity yet \u2014 keep going!</p>';
+    staggerRows(activityList, '.task-item');
   }
 
   function escapeHtml(str) {
@@ -80,6 +166,7 @@
       body: JSON.stringify({ title })
     });
     document.getElementById('quick-add-title').value = '';
+    showToast('Task added', 'success');
     loadDashboard();
   });
 

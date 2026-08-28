@@ -36,11 +36,13 @@
       return;
     }
 
-    list.innerHTML = data.tasks.map(t => `
-      <div class="task-item">
-        <div>
+    list.innerHTML = data.tasks.map(t => {
+      const accent = t.status === 'done' ? 'accent-lime' : ({ high: 'accent-coral', medium: 'accent-amber', low: 'accent-blue' }[t.priority] || 'accent-gray');
+      return `
+      <div class="accent-row ${accent}" data-task-id="${t.id}">
+        <div style="flex:1;">
           <span class="task-title ${t.status === 'done' ? 'done' : ''}">${escapeHtml(t.title)}</span>
-          ${t.priority ? `<span class="badge">${t.priority}</span>` : ''}
+          ${t.priority ? `<span class="badge ${t.priority}">${t.priority}</span>` : ''}
           ${t.due_date ? `<span class="due">due ${t.due_date}</span>` : ''}
         </div>
         <div class="task-actions">
@@ -52,7 +54,8 @@
           <button class="danger" onclick="deleteTask(${t.id})">Delete</button>
         </div>
       </div>
-    `).join('');
+    `; }).join('');
+    staggerRows(list, '.accent-row');
   }
 
   function escapeHtml(str) {
@@ -77,6 +80,7 @@
     document.getElementById('title').value = '';
     document.getElementById('priority').value = '';
     document.getElementById('due_date').value = '';
+    showToast('Task added ✓', 'success');
     loadTasks();
   });
 
@@ -86,11 +90,14 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
     });
-    loadTasks();
+    if (status === 'done') showToast('Nice work — task completed 🎉', 'success');
+    await loadTasks();
+    pulseRow(document.querySelector(`[data-task-id="${id}"]`));
   }
 
   async function deleteTask(id) {
     await fetch(`/tasks/${id}`, { method: 'DELETE' });
+    showToast('Task deleted');
     loadTasks();
   }
 

@@ -134,22 +134,33 @@
         actionBtn = `<button class="secondary" onclick="unclaim(${h.id})">Not me — undo</button>`;
       }
 
+      const deleteBtn = h.poster_id === currentUserId
+        ? `<button class="danger" onclick="deleteHelp(${h.id})" style="margin-left:0.4rem;">Delete</button>`
+        : '';
+
+      const urgencyAccent = { high: 'accent-coral', medium: 'accent-amber', low: 'accent-blue' }[h.urgency] || 'accent-gray';
+      const accentClass = h.status === 'resolved' ? 'accent-lime' : urgencyAccent;
+
       return `
-        <div class="help-item" style="display:block;">
-          <div class="help-top">
-            <div>
-              <strong>${escapeHtml(h.title)}</strong>
-              <span class="badge ${h.urgency === 'high' ? 'urgent' : ''}">${h.urgency}</span>
-              <span class="badge">${h.topic}</span>
-              <span class="badge status-${h.status}">${h.status}</span>
+        <div class="accent-row ${accentClass}" data-help-id="${h.id}" style="display:block;">
+          <div class="help-top" style="align-items:flex-start;">
+            <div style="display:flex; gap:0.7rem;">
+              ${avatarHtml(h.poster_name, 'sm')}
+              <div>
+                <strong>${escapeHtml(h.title)}</strong>
+                <span class="badge ${h.urgency}">${h.urgency}</span>
+                <span class="badge topic">${h.topic}</span>
+                <span class="badge status-${h.status}">${h.status}</span>
+                ${h.description ? `<div class="meta">${escapeHtml(h.description)}</div>` : ''}
+                <div class="meta">Posted by ${escapeHtml(h.poster_name)}</div>
+              </div>
             </div>
-            ${actionBtn}
+            <div>${actionBtn}${deleteBtn}</div>
           </div>
-          ${h.description ? `<div class="meta">${escapeHtml(h.description)}</div>` : ''}
-          <div class="meta">Posted by ${escapeHtml(h.poster_name)}</div>
           ${h.status === 'claimed' && h.claimer_name ? nextStepBlock(h) : ''}
         </div>`;
     }).join('');
+    staggerRows(list, '.accent-row');
   }
 
   function escapeHtml(str) {
@@ -177,6 +188,7 @@
       document.getElementById('description').value = '';
       document.getElementById('topic').value = '';
       tipsBox.classList.remove('visible');
+      showToast('Help request posted ✓', 'success');
       loadHelp();
     }
   });
@@ -186,16 +198,27 @@
 
   async function claim(id) {
     await fetch(`/help/${id}/claim`, { method: 'PATCH' });
-    loadHelp();
+    showToast("You're on it — go help them out", 'success');
+    await loadHelp();
+    pulseRow(document.querySelector(`[data-help-id="${id}"]`));
   }
 
   async function unclaim(id) {
     await fetch(`/help/${id}/unclaim`, { method: 'PATCH' });
+    showToast('Unclaimed — back in the open feed');
     loadHelp();
   }
 
   async function resolve(id) {
     await fetch(`/help/${id}/resolve`, { method: 'PATCH' });
+    showToast('Marked resolved 🎉', 'success');
+    await loadHelp();
+    pulseRow(document.querySelector(`[data-help-id="${id}"]`));
+  }
+
+  async function deleteHelp(id) {
+    await fetch(`/help/${id}`, { method: 'DELETE' });
+    showToast('Request deleted');
     loadHelp();
   }
 

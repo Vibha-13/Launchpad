@@ -1,0 +1,41 @@
+{% extends "app_base.html" %}
+{% block title %}People — LaunchPad{% endblock %}
+{% block content %}
+<div class="dash-header">
+  <h1 class="dash-greeting">People</h1>
+  <p class="dash-sub">Everyone building and helping on LaunchPad.</p>
+</div>
+<div class="people-grid" id="people-grid"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function loadPeople() {
+    const res = await fetch('/api/people');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const data = await res.json();
+
+    const grid = document.getElementById('people-grid');
+    grid.innerHTML = data.people.map(p => `
+      <div class="card person-card">
+        ${avatarHtml(p.name, 'lg')}
+        <div class="person-name">${escapeHtml(p.name)}</div>
+        <div class="person-email">${escapeHtml(p.email)}</div>
+        <div class="person-stats">
+          <div class="person-stat"><strong>${p.tasks_completed}</strong><span>Tasks done</span></div>
+          <div class="person-stat"><strong>${p.people_helped}</strong><span>People helped</span></div>
+        </div>
+      </div>
+    `).join('');
+    staggerRows(grid, '.person-card');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  loadPeople();
+</script>
+{% endblock %}

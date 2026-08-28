@@ -21,11 +21,19 @@ def create_app():
     from routes.help import help_bp
     from routes.dashboard import dashboard_bp
     from routes.profile import profile_bp
+    from routes.notifications import notifications_bp
+    from routes.people import people_bp
+    from routes.settings import settings_bp
+    from routes.search import search_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(help_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(profile_bp)
+    app.register_blueprint(notifications_bp)
+    app.register_blueprint(people_bp)
+    app.register_blueprint(settings_bp)
+    app.register_blueprint(search_bp)
 
     @app.route("/")
     def index():

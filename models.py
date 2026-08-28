@@ -38,6 +38,7 @@ class User(db.Model):
         foreign_keys="HelpRequest.claimer_id",
     )
     activity = db.relationship("ActivityLog", backref="user", lazy=True, cascade="all, delete-orphan")
+    notifications = db.relationship("Notification", backref="user", lazy=True, cascade="all, delete-orphan")
 
     def set_password(self, raw_password):
         self.password_hash = generate_password_hash(raw_password)
@@ -130,6 +131,26 @@ class ActivityLog(db.Model):
         }
 
 
+class Notification(db.Model):
+    __tablename__ = "notification"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    message = db.Column(db.String(255), nullable=False)
+    link = db.Column(db.String(255), nullable=True)
+    read = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "message": self.message,
+            "link": self.link,
+            "read": self.read,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
 def log_activity(user_id, event_type, reference_type, reference_id):
     """Helper to record an activity event — call this from routes after task/help actions."""
     entry = ActivityLog(
@@ -138,5 +159,12 @@ def log_activity(user_id, event_type, reference_type, reference_id):
         reference_type=reference_type,
         reference_id=reference_id,
     )
+    db.session.add(entry)
+    return entry
+
+
+def log_notification(user_id, message, link=None):
+    """Helper to create a notification for a user — call this from routes after events others should know about."""
+    entry = Notification(user_id=user_id, message=message, link=link)
     db.session.add(entry)
     return entry
