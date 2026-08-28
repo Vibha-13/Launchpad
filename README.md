@@ -1,7 +1,5 @@
 # LaunchPad
 
-**Live Demo:** https://launchpad-dise.onrender.com/
-
 A lightweight internal tool for teams to track their own tasks and ask each other for help — built around one question: *when someone's stuck, how do they actually get unstuck?*
 
 ## Screenshots
