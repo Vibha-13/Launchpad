@@ -5,30 +5,19 @@ A lightweight internal tool for teams to track their own tasks and ask each othe
 LaunchPad connects everyday task tracking with peer-to-peer help. A teammate can post what they're stuck on, another teammate can claim it, and both sides get the contact information and practical next steps needed to actually start solving the problem.
 
 ## Screenshots
+## Screenshots
 
 ### Dashboard
 
 ![LaunchPad Dashboard](ss/dashboard.png)
 
-### Tasks
-
-![LaunchPad Tasks](ss/tasks.png)
-
 ### Help Feed
 
 ![LaunchPad Help Feed](ss/helpfeed.png)
 
-### Profile
+### Tasks
 
-![LaunchPad Profile](ss/profile.png)
-
-### People
-
-![LaunchPad People](ss/people.png)
-
-### Settings
-
-![LaunchPad Settings](ss/settings.png)
+![LaunchPad Tasks](ss/tasks.png)
 
 ## Why
 
