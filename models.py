@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -167,4 +167,15 @@ def log_notification(user_id, message, link=None):
     """Helper to create a notification for a user — call this from routes after events others should know about."""
     entry = Notification(user_id=user_id, message=message, link=link)
     db.session.add(entry)
+
+    # Housekeeping: drop old read notifications so this table doesn't grow
+    # unbounded. Only touches notifications already marked read, so nothing
+    # the user hasn't seen is ever removed.
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    Notification.query.filter(
+        Notification.user_id == user_id,
+        Notification.read.is_(True),
+        Notification.created_at < cutoff,
+    ).delete(synchronize_session=False)
+
     return entry

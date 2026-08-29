@@ -36,10 +36,10 @@
     <h3 style="margin:0;">Help Feed</h3>
     <div style="display:flex; gap:0.5rem;">
       <select id="filter-status">
-        <option value="">All statuses</option>
-        <option value="open">Open</option>
+        <option value="open" selected>Open</option>
         <option value="claimed">Claimed</option>
         <option value="resolved">Resolved</option>
+        <option value="">All statuses</option>
       </select>
       <select id="filter-topic">
         <option value="">All topics</option>
@@ -53,12 +53,45 @@
     </div>
   </div>
   <div id="help-list"></div>
+  <div style="text-align:center; margin-top:0.8rem;">
+    <button class="secondary" id="load-more-btn" style="display:none;" onclick="loadMoreHelp()">Load more</button>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="edit-backdrop" style="display:none;">
+  <div class="card" id="edit-card" style="max-width:420px; margin:10vh auto;">
+    <h3>Edit request</h3>
+    <form class="stack" id="edit-form">
+      <input type="text" id="edit-title" required>
+      <textarea id="edit-description" rows="2"></textarea>
+      <select id="edit-topic" required>
+        <option value="development">Development</option>
+        <option value="database">Database</option>
+        <option value="git">Git</option>
+        <option value="deployment">Deployment</option>
+        <option value="documentation">Documentation</option>
+        <option value="other">Other</option>
+      </select>
+      <select id="edit-urgency">
+        <option value="low">Low urgency</option>
+        <option value="medium">Medium urgency</option>
+        <option value="high">High urgency</option>
+      </select>
+      <div style="display:flex; gap:0.5rem;">
+        <button type="submit">Save changes</button>
+        <button type="button" class="secondary" onclick="closeEdit()">Cancel</button>
+      </div>
+    </form>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
   let currentUserId = null;
+  let currentOffset = 0;
+  let editingId = null;
+  const PAGE_SIZE = 20;
 
   const TOPIC_TIPS = {
     development: ['What you\'re building and the language/framework', 'The exact error message or unexpected behavior', 'What you\'ve already tried'],
@@ -100,6 +133,12 @@
     tipsBox.classList.add('visible');
   });
 
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   async function loadMe() {
     const res = await fetch('/me');
     if (res.status === 401) { window.location.href = '/login'; return; }
@@ -107,66 +146,88 @@
     currentUserId = data.user.id;
   }
 
-  async function loadHelp() {
+  function renderRow(h) {
+    let actionBtn = '';
+    if (h.status === 'open' && h.poster_id !== currentUserId) {
+      actionBtn = `<button onclick='claim(${h.id}, ${JSON.stringify(h.title)})'>I'll help</button>`;
+    } else if (h.status === 'claimed' && h.poster_id === currentUserId) {
+      actionBtn = `<button onclick="resolve(${h.id})">Mark resolved</button>
+        <button class="secondary" onclick="releaseClaim(${h.id})" title="Use this if your helper's gone quiet">Not working out — release</button>`;
+    } else if (h.status === 'claimed' && h.claimer_id === currentUserId) {
+      actionBtn = `<button class="secondary" onclick="unclaim(${h.id})">Not me — undo</button>`;
+    }
+
+    const editBtn = (h.status === 'open' && h.poster_id === currentUserId)
+      ? `<button class="secondary" onclick='startEdit(${JSON.stringify(h)})' style="margin-left:0.4rem;">Edit</button>`
+      : '';
+    const deleteBtn = h.poster_id === currentUserId
+      ? `<button class="danger" onclick="deleteHelp(${h.id})" style="margin-left:0.4rem;">Delete</button>`
+      : '';
+
+    const urgencyAccent = { high: 'accent-coral', medium: 'accent-amber', low: 'accent-blue' }[h.urgency] || 'accent-gray';
+    const accentClass = h.status === 'resolved' ? 'accent-lime' : urgencyAccent;
+
+    return `
+      <div class="accent-row ${accentClass}" data-help-id="${h.id}" style="display:block;">
+        <div class="help-top" style="align-items:flex-start;">
+          <div style="display:flex; gap:0.7rem;">
+            ${avatarHtml(h.poster_name, 'sm')}
+            <div>
+              <strong>${escapeHtml(h.title)}</strong>
+              <span class="badge ${h.urgency}">${h.urgency}</span>
+              <span class="badge topic">${h.topic}</span>
+              <span class="badge status-${h.status}">${h.status}</span>
+              ${h.description ? `<div class="meta">${escapeHtml(h.description)}</div>` : ''}
+              <div class="meta">Posted by ${escapeHtml(h.poster_name)}</div>
+            </div>
+          </div>
+          <div>${actionBtn}${editBtn}${deleteBtn}</div>
+        </div>
+        ${h.status === 'claimed' && h.claimer_name ? nextStepBlock(h) : ''}
+      </div>`;
+  }
+
+  function buildParams(offset) {
     const status = document.getElementById('filter-status').value;
     const topic = document.getElementById('filter-topic').value;
     const params = new URLSearchParams();
     if (status) params.set('status', status);
+    else params.set('all', '1');
     if (topic) params.set('topic', topic);
+    params.set('limit', PAGE_SIZE);
+    params.set('offset', offset);
+    return params;
+  }
 
-    const res = await fetch('/help' + (params.toString() ? `?${params}` : ''));
+  async function loadHelp() {
+    currentOffset = 0;
+    const res = await fetch('/help?' + buildParams(0));
     if (res.status === 401) { window.location.href = '/login'; return; }
     const data = await res.json();
 
     const list = document.getElementById('help-list');
     if (!data.help_requests.length) {
-      list.innerHTML = '<p class="empty">No one needs help right now. Great teamwork! 🎉</p>';
+      list.innerHTML = '<p class="empty">Nothing here right now. Great teamwork! 🎉</p>';
+      document.getElementById('load-more-btn').style.display = 'none';
       return;
     }
 
-    list.innerHTML = data.help_requests.map(h => {
-      let actionBtn = '';
-      if (h.status === 'open' && h.poster_id !== currentUserId) {
-        actionBtn = `<button onclick="claim(${h.id})">I'll help</button>`;
-      } else if (h.status === 'claimed' && h.poster_id === currentUserId) {
-        actionBtn = `<button onclick="resolve(${h.id})">Mark resolved</button>`;
-      } else if (h.status === 'claimed' && h.claimer_id === currentUserId) {
-        actionBtn = `<button class="secondary" onclick="unclaim(${h.id})">Not me — undo</button>`;
-      }
-
-      const deleteBtn = h.poster_id === currentUserId
-        ? `<button class="danger" onclick="deleteHelp(${h.id})" style="margin-left:0.4rem;">Delete</button>`
-        : '';
-
-      const urgencyAccent = { high: 'accent-coral', medium: 'accent-amber', low: 'accent-blue' }[h.urgency] || 'accent-gray';
-      const accentClass = h.status === 'resolved' ? 'accent-lime' : urgencyAccent;
-
-      return `
-        <div class="accent-row ${accentClass}" data-help-id="${h.id}" style="display:block;">
-          <div class="help-top" style="align-items:flex-start;">
-            <div style="display:flex; gap:0.7rem;">
-              ${avatarHtml(h.poster_name, 'sm')}
-              <div>
-                <strong>${escapeHtml(h.title)}</strong>
-                <span class="badge ${h.urgency}">${h.urgency}</span>
-                <span class="badge topic">${h.topic}</span>
-                <span class="badge status-${h.status}">${h.status}</span>
-                ${h.description ? `<div class="meta">${escapeHtml(h.description)}</div>` : ''}
-                <div class="meta">Posted by ${escapeHtml(h.poster_name)}</div>
-              </div>
-            </div>
-            <div>${actionBtn}${deleteBtn}</div>
-          </div>
-          ${h.status === 'claimed' && h.claimer_name ? nextStepBlock(h) : ''}
-        </div>`;
-    }).join('');
+    list.innerHTML = data.help_requests.map(renderRow).join('');
     staggerRows(list, '.accent-row');
+
+    currentOffset = data.offset + data.help_requests.length;
+    document.getElementById('load-more-btn').style.display = data.has_more ? 'inline-block' : 'none';
   }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+  async function loadMoreHelp() {
+    const res = await fetch('/help?' + buildParams(currentOffset));
+    const data = await res.json();
+
+    const list = document.getElementById('help-list');
+    list.insertAdjacentHTML('beforeend', data.help_requests.map(renderRow).join(''));
+
+    currentOffset = data.offset + data.help_requests.length;
+    document.getElementById('load-more-btn').style.display = data.has_more ? 'inline-block' : 'none';
   }
 
   document.getElementById('post-form').addEventListener('submit', async (e) => {
@@ -190,22 +251,38 @@
       tipsBox.classList.remove('visible');
       showToast('Help request posted ✓', 'success');
       loadHelp();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || 'Could not post request', 'error');
     }
   });
 
   document.getElementById('filter-status').addEventListener('change', loadHelp);
   document.getElementById('filter-topic').addEventListener('change', loadHelp);
 
-  async function claim(id) {
-    await fetch(`/help/${id}/claim`, { method: 'PATCH' });
-    showToast("You're on it — go help them out", 'success');
-    await loadHelp();
-    pulseRow(document.querySelector(`[data-help-id="${id}"]`));
+  async function claim(id, title) {
+    if (!confirm(`Claim "${title}"? The poster will see your contact info and expect help from you.`)) return;
+    const res = await fetch(`/help/${id}/claim`, { method: 'PATCH' });
+    if (res.ok) {
+      showToast("You're on it — go help them out", 'success');
+      await loadHelp();
+      pulseRow(document.querySelector(`[data-help-id="${id}"]`));
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || 'Could not claim request', 'error');
+    }
   }
 
   async function unclaim(id) {
     await fetch(`/help/${id}/unclaim`, { method: 'PATCH' });
     showToast('Unclaimed — back in the open feed');
+    loadHelp();
+  }
+
+  async function releaseClaim(id) {
+    if (!confirm("Release this claim? It'll go back to the open feed for someone else to pick up.")) return;
+    await fetch(`/help/${id}/unclaim`, { method: 'PATCH' });
+    showToast('Claim released — back in the open feed');
     loadHelp();
   }
 
@@ -221,6 +298,45 @@
     showToast('Request deleted');
     loadHelp();
   }
+
+  function startEdit(h) {
+    editingId = h.id;
+    document.getElementById('edit-title').value = h.title;
+    document.getElementById('edit-description').value = h.description || '';
+    document.getElementById('edit-topic').value = h.topic;
+    document.getElementById('edit-urgency').value = h.urgency;
+    document.getElementById('edit-backdrop').style.display = 'block';
+  }
+
+  function closeEdit() {
+    editingId = null;
+    document.getElementById('edit-backdrop').style.display = 'none';
+  }
+
+  document.getElementById('edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!editingId) return;
+    const title = document.getElementById('edit-title').value.trim();
+    const description = document.getElementById('edit-description').value.trim();
+    const topic = document.getElementById('edit-topic').value;
+    const urgency = document.getElementById('edit-urgency').value;
+    if (!title || !topic) return;
+
+    const res = await fetch(`/help/${editingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, topic, urgency })
+    });
+
+    if (res.ok) {
+      showToast('Request updated ✓', 'success');
+      closeEdit();
+      loadHelp();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || 'Could not update request', 'error');
+    }
+  });
 
   (async () => {
     await loadMe();

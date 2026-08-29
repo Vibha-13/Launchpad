@@ -693,3 +693,14 @@ button.lime:hover { filter: brightness(1.05); }
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Edit-request modal (Help Feed) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+}
+.modal-backdrop .card {
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}

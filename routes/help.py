@@ -5,6 +5,10 @@ from routes.auth_utils import login_required, get_current_user
 
 help_bp = Blueprint("help", __name__)
 
+MAX_OPEN_REQUESTS_PER_USER = 5
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 50
+
 
 @help_bp.route("/help-page", methods=["GET"])
 @login_required
@@ -22,6 +26,11 @@ def list_help():
         if status not in HELP_STATUSES:
             return jsonify({"error": f"status must be one of {HELP_STATUSES}"}), 400
         query = query.filter_by(status=status)
+    elif request.args.get("all") != "1":
+        # No status chosen and the client didn't explicitly ask for everything —
+        # default to open requests so the feed doesn't fill up with old
+        # claimed/resolved items as usage grows.
+        query = query.filter_by(status="open")
 
     topic = request.args.get("topic")
     if topic:
@@ -29,8 +38,26 @@ def list_help():
             return jsonify({"error": f"topic must be one of {HELP_TOPICS}"}), 400
         query = query.filter_by(topic=topic)
 
-    requests_ = query.order_by(HelpRequest.created_at.desc()).all()
-    return jsonify({"help_requests": [h.to_dict() for h in requests_]})
+    try:
+        limit = min(int(request.args.get("limit", DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except ValueError:
+        return jsonify({"error": "limit and offset must be integers"}), 400
+
+    total = query.count()
+    requests_ = (
+        query.order_by(HelpRequest.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return jsonify({
+        "help_requests": [h.to_dict() for h in requests_],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(requests_) < total,
+    })
 
 
 @help_bp.route("/help", methods=["POST"])
@@ -51,6 +78,13 @@ def create_help():
     if urgency not in HELP_URGENCIES:
         return jsonify({"error": f"urgency must be one of {HELP_URGENCIES}"}), 400
 
+    open_count = HelpRequest.query.filter_by(poster_id=user.id, status="open").count()
+    if open_count >= MAX_OPEN_REQUESTS_PER_USER:
+        return jsonify({
+            "error": f"You already have {MAX_OPEN_REQUESTS_PER_USER} open help requests. "
+                     "Resolve or delete one before posting another."
+        }), 429
+
     req = HelpRequest(
         poster_id=user.id,
         title=title,
@@ -66,6 +100,47 @@ def create_help():
     db.session.commit()
 
     return jsonify({"help_request": req.to_dict()}), 201
+
+
+@help_bp.route("/help/<int:help_id>", methods=["PATCH"])
+@login_required
+def update_help(help_id):
+    user = get_current_user()
+    req = HelpRequest.query.get(help_id)
+    if not req:
+        return jsonify({"error": "Help request not found"}), 404
+
+    if req.poster_id != user.id:
+        return jsonify({"error": "Only the poster can edit this request"}), 403
+
+    if req.status != "open":
+        return jsonify({"error": "Only open requests can be edited — once someone's claimed it, delete and repost instead"}), 409
+
+    data = request.get_json(silent=True) or {}
+
+    if "title" in data:
+        title = (data["title"] or "").strip()
+        if not title:
+            return jsonify({"error": "Title cannot be empty"}), 400
+        req.title = title
+
+    if "description" in data:
+        req.description = data["description"]
+
+    if "topic" in data:
+        topic = data["topic"]
+        if topic not in HELP_TOPICS:
+            return jsonify({"error": f"topic must be one of {HELP_TOPICS}"}), 400
+        req.topic = topic
+
+    if "urgency" in data:
+        urgency = data["urgency"]
+        if urgency not in HELP_URGENCIES:
+            return jsonify({"error": f"urgency must be one of {HELP_URGENCIES}"}), 400
+        req.urgency = urgency
+
+    db.session.commit()
+    return jsonify({"help_request": req.to_dict()})
 
 
 @help_bp.route("/help/<int:help_id>/claim", methods=["PATCH"])
@@ -101,17 +176,22 @@ def unclaim_help(help_id):
     if not req:
         return jsonify({"error": "Help request not found"}), 404
 
-    if req.claimer_id != user.id:
-        return jsonify({"error": "Only the claimer can unclaim this request"}), 403
+    is_claimer = req.claimer_id == user.id
+    is_poster = req.poster_id == user.id
+    if not is_claimer and not is_poster:
+        return jsonify({"error": "Only the claimer or poster can unclaim this request"}), 403
 
     if req.status != "claimed":
         return jsonify({"error": "Only claimed requests can be unclaimed"}), 409
 
+    released_by_poster = is_poster and not is_claimer
     req.claimer_id = None
     req.status = "open"
     req.claimed_at = None
     db.session.commit()
 
+    if released_by_poster:
+        return jsonify({"help_request": req.to_dict(), "released_by_poster": True})
     return jsonify({"help_request": req.to_dict()})
 
 
