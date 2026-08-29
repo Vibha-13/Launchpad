@@ -61,7 +61,7 @@ ActivityLog is maintained separately as an append-only history so the applicatio
 
 ## Security
 
-The API was tested with real multi-user scenarios, including:
+The API was manually tested end-to-end with real multi-user scenarios, including:
 - unauthenticated requests being rejected
 - validation of task and help-request input
 - users being isolated from each other's tasks
@@ -77,9 +77,16 @@ Resources belonging to another user return 404 where appropriate rather than exp
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 python app.py
 
 Then visit http://127.0.0.1:5000/login.
+
+By default the app generates a random `SECRET_KEY` on each restart, which is
+fine for local development but will log everyone out whenever the server
+restarts. To keep sessions stable, set a fixed `SECRET_KEY` in `.env`
+(generate one with `python -c "import secrets; print(secrets.token_hex(32))"`).
+A `SECRET_KEY` is required if `FLASK_ENV=production`.
 
 ## Future Scope
 
