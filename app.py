@@ -1,6 +1,13 @@
 import os
+import secrets
 from flask import Flask, redirect, url_for
 from models import db
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 
 def create_app():
@@ -9,7 +16,17 @@ def create_app():
     basedir = os.path.abspath(os.path.dirname(__file__))
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(basedir, 'database.db')}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+
+    secret_key = os.environ.get("SECRET_KEY")
+    if not secret_key:
+        if os.environ.get("FLASK_ENV") == "production":
+            raise RuntimeError(
+                "SECRET_KEY environment variable must be set in production. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        # Local/dev fallback only — random per run, never a hardcoded default.
+        secret_key = secrets.token_hex(32)
+    app.config["SECRET_KEY"] = secret_key
 
     db.init_app(app)
 
@@ -48,4 +65,5 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    debug_mode = os.environ.get("FLASK_DEBUG", "1") == "1"
+    app.run(debug=debug_mode)
