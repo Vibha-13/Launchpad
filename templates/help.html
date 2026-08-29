@@ -90,6 +90,7 @@
 <script>
   let currentUserId = null;
   let currentOffset = 0;
+  let helpCache = {};
   let editingId = null;
   const PAGE_SIZE = 20;
 
@@ -147,9 +148,10 @@
   }
 
   function renderRow(h) {
+    helpCache[h.id] = h;
     let actionBtn = '';
     if (h.status === 'open' && h.poster_id !== currentUserId) {
-      actionBtn = `<button onclick='claim(${h.id}, ${JSON.stringify(h.title)})'>I'll help</button>`;
+      actionBtn = `<button onclick="claim(${h.id})">I'll help</button>`;
     } else if (h.status === 'claimed' && h.poster_id === currentUserId) {
       actionBtn = `<button onclick="resolve(${h.id})">Mark resolved</button>
         <button class="secondary" onclick="releaseClaim(${h.id})" title="Use this if your helper's gone quiet">Not working out — release</button>`;
@@ -158,7 +160,7 @@
     }
 
     const editBtn = (h.status === 'open' && h.poster_id === currentUserId)
-      ? `<button class="secondary" onclick='startEdit(${JSON.stringify(h)})' style="margin-left:0.4rem;">Edit</button>`
+      ? `<button class="secondary" onclick="startEdit(${h.id})" style="margin-left:0.4rem;">Edit</button>`
       : '';
     const deleteBtn = h.poster_id === currentUserId
       ? `<button class="danger" onclick="deleteHelp(${h.id})" style="margin-left:0.4rem;">Delete</button>`
@@ -260,7 +262,8 @@
   document.getElementById('filter-status').addEventListener('change', loadHelp);
   document.getElementById('filter-topic').addEventListener('change', loadHelp);
 
-  async function claim(id, title) {
+  async function claim(id) {
+    const title = (helpCache[id] && helpCache[id].title) || 'this request';
     if (!confirm(`Claim "${title}"? The poster will see your contact info and expect help from you.`)) return;
     const res = await fetch(`/help/${id}/claim`, { method: 'PATCH' });
     if (res.ok) {
@@ -299,7 +302,9 @@
     loadHelp();
   }
 
-  function startEdit(h) {
+  function startEdit(id) {
+    const h = helpCache[id];
+    if (!h) return;
     editingId = h.id;
     document.getElementById('edit-title').value = h.title;
     document.getElementById('edit-description').value = h.description || '';
