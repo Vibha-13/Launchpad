@@ -294,7 +294,6 @@ a:hover { text-decoration: underline; }
 .dash-greeting { font-size: 1.7rem; font-weight: 800; margin-bottom: 0.15rem; }
 .dash-sub { color: var(--ink-500); font-size: 0.95rem; }
 .dash-sub .accent-word { color: var(--brand-600); font-weight: 700; }
-.doodle { position: absolute; opacity: 0.85; pointer-events: none; }
 
 /* ---------- Cards ---------- */
 .card {
