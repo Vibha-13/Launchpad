@@ -33,5 +33,5 @@ def search():
 
     return jsonify({
         "tasks": [t.to_dict() for t in tasks],
-        "help_requests": [h.to_dict() for h in help_requests],
+        "help_requests": [h.to_dict(viewer_id=user.id) for h in help_requests],
     })

@@ -1,8 +1,18 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
+
+
+def utcnow():
+    """Naive UTC timestamp — drop-in replacement for the deprecated datetime.utcnow().
+
+    Returns a timezone-naive datetime in UTC (tzinfo stripped) so it matches the
+    naive DateTime columns exactly. Behavior is identical to the old
+    datetime.utcnow(); this just avoids the Python 3.12+ deprecation warning.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 # ---------- Allowed values (kept as plain strings, validated in routes) ----------
 TASK_STATUSES = ["not_started", "in_progress", "done"]
@@ -11,6 +21,12 @@ TASK_PRIORITIES = ["low", "medium", "high"]
 HELP_TOPICS = ["development", "database", "git", "deployment", "documentation", "other"]
 HELP_URGENCIES = ["low", "medium", "high"]
 HELP_STATUSES = ["open", "claimed", "resolved"]
+
+# Server-side length caps. SQLite does NOT enforce VARCHAR(n), so without these
+# a client could store arbitrarily large titles/descriptions. Titles match the
+# String(200) columns; descriptions are Text (unbounded) so we pick a sane cap.
+MAX_TITLE_LEN = 200
+MAX_DESCRIPTION_LEN = 5000
 
 ACTIVITY_EVENTS = [
     "task_created", "task_completed",
@@ -26,7 +42,7 @@ class User(db.Model):
     name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     tasks = db.relationship("Task", backref="user", lazy=True, cascade="all, delete-orphan")
     posted_help = db.relationship(
@@ -60,7 +76,7 @@ class Task(db.Model):
     status = db.Column(db.String(20), nullable=False, default="not_started")  # see TASK_STATUSES
     priority = db.Column(db.String(20), nullable=True)  # see TASK_PRIORITIES
     due_date = db.Column(db.Date, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
 
     def to_dict(self):
@@ -87,19 +103,17 @@ class HelpRequest(db.Model):
     topic = db.Column(db.String(30), nullable=False)  # see HELP_TOPICS
     urgency = db.Column(db.String(20), nullable=False, default="medium")  # see HELP_URGENCIES
     status = db.Column(db.String(20), nullable=False, default="open")  # see HELP_STATUSES
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
     claimed_at = db.Column(db.DateTime, nullable=True)
     resolved_at = db.Column(db.DateTime, nullable=True)
 
-    def to_dict(self):
-        return {
+    def to_dict(self, viewer_id=None):
+        data = {
             "id": self.id,
             "poster_id": self.poster_id,
             "poster_name": self.poster.name if self.poster else None,
             "claimer_id": self.claimer_id,
             "claimer_name": self.claimer.name if self.claimer else None,
-            "claimer_email": self.claimer.email if self.claimer else None,
-            "poster_email": self.poster.email if self.poster else None,
             "title": self.title,
             "description": self.description,
             "topic": self.topic,
@@ -109,6 +123,15 @@ class HelpRequest(db.Model):
             "claimed_at": self.claimed_at.isoformat() if self.claimed_at else None,
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
         }
+        # Contact details are only unlocked once a request is claimed/resolved
+        # AND only for the two people involved (poster and claimer). This
+        # matches the product design — you exchange emails after a claim, not
+        # while the request is still sitting open in the public feed.
+        involved = viewer_id is not None and viewer_id in (self.poster_id, self.claimer_id)
+        if involved and self.status in ("claimed", "resolved"):
+            data["poster_email"] = self.poster.email if self.poster else None
+            data["claimer_email"] = self.claimer.email if self.claimer else None
+        return data
 
 
 class ActivityLog(db.Model):
@@ -119,7 +142,7 @@ class ActivityLog(db.Model):
     event_type = db.Column(db.String(30), nullable=False)  # see ACTIVITY_EVENTS
     reference_type = db.Column(db.String(20), nullable=False)  # see REFERENCE_TYPES
     reference_id = db.Column(db.Integer, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     def to_dict(self):
         return {
@@ -139,7 +162,7 @@ class Notification(db.Model):
     message = db.Column(db.String(255), nullable=False)
     link = db.Column(db.String(255), nullable=True)
     read = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     def to_dict(self):
         return {
@@ -171,7 +194,7 @@ def log_notification(user_id, message, link=None):
     # Housekeeping: drop old read notifications so this table doesn't grow
     # unbounded. Only touches notifications already marked read, so nothing
     # the user hasn't seen is ever removed.
-    cutoff = datetime.utcnow() - timedelta(days=30)
+    cutoff = utcnow() - timedelta(days=30)
     Notification.query.filter(
         Notification.user_id == user_id,
         Notification.read.is_(True),

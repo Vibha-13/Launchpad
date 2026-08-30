@@ -59,7 +59,7 @@ def dashboard():
     return jsonify({
         "progress": progress,
         "tasks": [t.to_dict() for t in tasks],
-        "recent_help": [h.to_dict() for h in recent_help],
+        "recent_help": [h.to_dict(viewer_id=user.id) for h in recent_help],
         "stats": {
             "tasks_completed": done,
             "people_helped": people_helped,

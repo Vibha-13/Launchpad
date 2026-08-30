@@ -85,7 +85,7 @@
     const meRes = await fetch('/me');
     if (meRes.status === 401) { window.location.href = '/login'; return; }
     const me = await meRes.json();
-    document.getElementById('greeting').innerHTML = `Hey ${me.user.name.split(' ')[0]}! \u{1F44B}`;
+    document.getElementById('greeting').innerHTML = `Hey ${escapeHtml(me.user.name.split(' ')[0])}! \u{1F44B}`;
 
     const res = await fetch('/api/dashboard');
     if (res.status === 401) { window.location.href = '/login'; return; }

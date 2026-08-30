@@ -1,6 +1,5 @@
-from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template
-from models import db, HelpRequest, HELP_TOPICS, HELP_URGENCIES, HELP_STATUSES, log_activity, log_notification
+from models import db, HelpRequest, HELP_TOPICS, HELP_URGENCIES, HELP_STATUSES, MAX_TITLE_LEN, MAX_DESCRIPTION_LEN, log_activity, log_notification, utcnow
 from routes.auth_utils import login_required, get_current_user
 
 help_bp = Blueprint("help", __name__)
@@ -19,6 +18,7 @@ def help_page():
 @help_bp.route("/help", methods=["GET"])
 @login_required
 def list_help():
+    user = get_current_user()
     query = HelpRequest.query
 
     status = request.args.get("status")
@@ -52,7 +52,7 @@ def list_help():
         .all()
     )
     return jsonify({
-        "help_requests": [h.to_dict() for h in requests_],
+        "help_requests": [h.to_dict(viewer_id=user.id) for h in requests_],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -69,6 +69,12 @@ def create_help():
     title = (data.get("title") or "").strip()
     if not title:
         return jsonify({"error": "Title is required"}), 400
+    if len(title) > MAX_TITLE_LEN:
+        return jsonify({"error": f"Title must be {MAX_TITLE_LEN} characters or fewer"}), 400
+
+    description = data.get("description")
+    if description and len(description) > MAX_DESCRIPTION_LEN:
+        return jsonify({"error": f"Description must be {MAX_DESCRIPTION_LEN} characters or fewer"}), 400
 
     topic = data.get("topic")
     if topic not in HELP_TOPICS:
@@ -88,7 +94,7 @@ def create_help():
     req = HelpRequest(
         poster_id=user.id,
         title=title,
-        description=data.get("description"),
+        description=description,
         topic=topic,
         urgency=urgency,
         status="open",
@@ -99,14 +105,14 @@ def create_help():
     log_activity(user.id, "help_posted", "help_request", req.id)
     db.session.commit()
 
-    return jsonify({"help_request": req.to_dict()}), 201
+    return jsonify({"help_request": req.to_dict(viewer_id=user.id)}), 201
 
 
 @help_bp.route("/help/<int:help_id>", methods=["PATCH"])
 @login_required
 def update_help(help_id):
     user = get_current_user()
-    req = HelpRequest.query.get(help_id)
+    req = db.session.get(HelpRequest, help_id)
     if not req:
         return jsonify({"error": "Help request not found"}), 404
 
@@ -122,10 +128,15 @@ def update_help(help_id):
         title = (data["title"] or "").strip()
         if not title:
             return jsonify({"error": "Title cannot be empty"}), 400
+        if len(title) > MAX_TITLE_LEN:
+            return jsonify({"error": f"Title must be {MAX_TITLE_LEN} characters or fewer"}), 400
         req.title = title
 
     if "description" in data:
-        req.description = data["description"]
+        description = data["description"]
+        if description and len(description) > MAX_DESCRIPTION_LEN:
+            return jsonify({"error": f"Description must be {MAX_DESCRIPTION_LEN} characters or fewer"}), 400
+        req.description = description
 
     if "topic" in data:
         topic = data["topic"]
@@ -140,14 +151,14 @@ def update_help(help_id):
         req.urgency = urgency
 
     db.session.commit()
-    return jsonify({"help_request": req.to_dict()})
+    return jsonify({"help_request": req.to_dict(viewer_id=user.id)})
 
 
 @help_bp.route("/help/<int:help_id>/claim", methods=["PATCH"])
 @login_required
 def claim_help(help_id):
     user = get_current_user()
-    req = HelpRequest.query.get(help_id)
+    req = db.session.get(HelpRequest, help_id)
     if not req:
         return jsonify({"error": "Help request not found"}), 404
 
@@ -157,22 +168,37 @@ def claim_help(help_id):
     if req.status != "open":
         return jsonify({"error": f"Request is already {req.status}"}), 409
 
-    req.claimer_id = user.id
-    req.status = "claimed"
-    req.claimed_at = datetime.utcnow()
+    # Atomic claim. The WHERE status='open' guard means that if two people
+    # claim simultaneously (multiple gunicorn workers), only one UPDATE matches
+    # a row; the loser updates zero rows and is rejected below. This is what
+    # actually enforces the "one claimer" guarantee \u2014 the check above is just a
+    # friendly fast path for the common already-claimed case.
+    poster_id, title = req.poster_id, req.title
+    claimed = (
+        HelpRequest.query
+        .filter_by(id=help_id, status="open")
+        .update(
+            {"claimer_id": user.id, "status": "claimed", "claimed_at": utcnow()},
+            synchronize_session=False,
+        )
+    )
+    if not claimed:
+        db.session.rollback()
+        return jsonify({"error": "Someone else just claimed this request"}), 409
 
-    log_activity(user.id, "help_claimed", "help_request", req.id)
-    log_notification(req.poster_id, f"{user.name} is helping with \u201c{req.title}\u201d", link="/help-page")
+    log_activity(user.id, "help_claimed", "help_request", help_id)
+    log_notification(poster_id, f"{user.name} is helping with \u201c{title}\u201d", link="/help-page")
     db.session.commit()
 
-    return jsonify({"help_request": req.to_dict()})
+    req = db.session.get(HelpRequest, help_id)
+    return jsonify({"help_request": req.to_dict(viewer_id=user.id)})
 
 
 @help_bp.route("/help/<int:help_id>/unclaim", methods=["PATCH"])
 @login_required
 def unclaim_help(help_id):
     user = get_current_user()
-    req = HelpRequest.query.get(help_id)
+    req = db.session.get(HelpRequest, help_id)
     if not req:
         return jsonify({"error": "Help request not found"}), 404
 
@@ -185,21 +211,31 @@ def unclaim_help(help_id):
         return jsonify({"error": "Only claimed requests can be unclaimed"}), 409
 
     released_by_poster = is_poster and not is_claimer
-    req.claimer_id = None
-    req.status = "open"
-    req.claimed_at = None
+    unclaimed = (
+        HelpRequest.query
+        .filter_by(id=help_id, status="claimed")
+        .update(
+            {"claimer_id": None, "status": "open", "claimed_at": None},
+            synchronize_session=False,
+        )
+    )
+    if not unclaimed:
+        db.session.rollback()
+        return jsonify({"error": "Request is no longer claimed"}), 409
+
     db.session.commit()
 
+    req = db.session.get(HelpRequest, help_id)
     if released_by_poster:
-        return jsonify({"help_request": req.to_dict(), "released_by_poster": True})
-    return jsonify({"help_request": req.to_dict()})
+        return jsonify({"help_request": req.to_dict(viewer_id=user.id), "released_by_poster": True})
+    return jsonify({"help_request": req.to_dict(viewer_id=user.id)})
 
 
 @help_bp.route("/help/<int:help_id>/resolve", methods=["PATCH"])
 @login_required
 def resolve_help(help_id):
     user = get_current_user()
-    req = HelpRequest.query.get(help_id)
+    req = db.session.get(HelpRequest, help_id)
     if not req:
         return jsonify({"error": "Help request not found"}), 404
 
@@ -209,22 +245,33 @@ def resolve_help(help_id):
     if req.status != "claimed":
         return jsonify({"error": "Only claimed requests can be resolved"}), 409
 
-    req.status = "resolved"
-    req.resolved_at = datetime.utcnow()
+    claimer_id, title = req.claimer_id, req.title
+    resolved = (
+        HelpRequest.query
+        .filter_by(id=help_id, status="claimed")
+        .update(
+            {"status": "resolved", "resolved_at": utcnow()},
+            synchronize_session=False,
+        )
+    )
+    if not resolved:
+        db.session.rollback()
+        return jsonify({"error": "Request is no longer claimed"}), 409
 
-    log_activity(user.id, "help_resolved", "help_request", req.id)
-    if req.claimer_id:
-        log_notification(req.claimer_id, f"{user.name} marked \u201c{req.title}\u201d as resolved", link="/help-page")
+    log_activity(user.id, "help_resolved", "help_request", help_id)
+    if claimer_id:
+        log_notification(claimer_id, f"{user.name} marked \u201c{title}\u201d as resolved", link="/help-page")
     db.session.commit()
 
-    return jsonify({"help_request": req.to_dict()})
+    req = db.session.get(HelpRequest, help_id)
+    return jsonify({"help_request": req.to_dict(viewer_id=user.id)})
 
 
 @help_bp.route("/help/<int:help_id>", methods=["DELETE"])
 @login_required
 def delete_help(help_id):
     user = get_current_user()
-    req = HelpRequest.query.get(help_id)
+    req = db.session.get(HelpRequest, help_id)
     if not req:
         return jsonify({"error": "Help request not found"}), 404
 

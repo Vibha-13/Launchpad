@@ -1,3 +1,14 @@
+// ---------- Shared HTML escaper ----------
+// Canonical escaper for all app pages. ui.js is loaded before every page's
+// inline {% block scripts %}, so templates can rely on window.escapeHtml
+// instead of redefining their own. Any user-controlled value interpolated
+// into innerHTML MUST pass through this first.
+window.escapeHtml = function (value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+};
+
 (function () {
   let stack = document.querySelector('.toast-stack');
   if (!stack) {
@@ -12,7 +23,8 @@
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     const icon = ICONS[type] || '';
-    toast.innerHTML = icon ? `<span>${icon}</span><span>${message}</span>` : `<span>${message}</span>`;
+    const safe = escapeHtml(message);
+    toast.innerHTML = icon ? `<span>${icon}</span><span>${safe}</span>` : `<span>${safe}</span>`;
     stack.appendChild(toast);
 
     setTimeout(() => {
@@ -111,7 +123,7 @@ window.avatarHtml = function (name, sizeClass = '') {
           <div class="notif-item ${n.read ? '' : 'unread'}">
             <span class="notif-item-dot"></span>
             <div class="notif-item-body">
-              <div>${n.message}</div>
+              <div>${escapeHtml(n.message)}</div>
               <div class="notif-item-time">${timeAgo(n.created_at)}</div>
             </div>
           </div>`).join('')
@@ -163,8 +175,8 @@ window.avatarHtml = function (name, sizeClass = '') {
       results.innerHTML = items.length
         ? items.map(i => `
             <div class="search-result-item" onclick="window.location.href='${i.href}'">
-              <div class="search-result-type">${i.type}</div>
-              <div>${i.title}</div>
+              <div class="search-result-type">${escapeHtml(i.type)}</div>
+              <div>${escapeHtml(i.title)}</div>
             </div>`).join('')
         : '<div class="search-empty">No matches</div>';
       results.classList.add('visible');

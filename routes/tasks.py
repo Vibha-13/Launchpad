@@ -1,6 +1,6 @@
-from datetime import datetime, date
+from datetime import date
 from flask import Blueprint, request, jsonify, render_template
-from models import db, Task, TASK_STATUSES, TASK_PRIORITIES, log_activity
+from models import db, Task, TASK_STATUSES, TASK_PRIORITIES, MAX_TITLE_LEN, MAX_DESCRIPTION_LEN, log_activity, utcnow
 from routes.auth_utils import login_required, get_current_user
 
 tasks_bp = Blueprint("tasks", __name__)
@@ -33,6 +33,12 @@ def create_task():
     title = (data.get("title") or "").strip()
     if not title:
         return jsonify({"error": "Title is required"}), 400
+    if len(title) > MAX_TITLE_LEN:
+        return jsonify({"error": f"Title must be {MAX_TITLE_LEN} characters or fewer"}), 400
+
+    description = data.get("description")
+    if description and len(description) > MAX_DESCRIPTION_LEN:
+        return jsonify({"error": f"Description must be {MAX_DESCRIPTION_LEN} characters or fewer"}), 400
 
     priority = data.get("priority")
     if priority and priority not in TASK_PRIORITIES:
@@ -48,7 +54,7 @@ def create_task():
     task = Task(
         user_id=user.id,
         title=title,
-        description=data.get("description"),
+        description=description,
         priority=priority,
         due_date=due_date,
         status="not_started",
@@ -76,10 +82,15 @@ def update_task(task_id):
         title = (data["title"] or "").strip()
         if not title:
             return jsonify({"error": "Title cannot be empty"}), 400
+        if len(title) > MAX_TITLE_LEN:
+            return jsonify({"error": f"Title must be {MAX_TITLE_LEN} characters or fewer"}), 400
         task.title = title
 
     if "description" in data:
-        task.description = data["description"]
+        description = data["description"]
+        if description and len(description) > MAX_DESCRIPTION_LEN:
+            return jsonify({"error": f"Description must be {MAX_DESCRIPTION_LEN} characters or fewer"}), 400
+        task.description = description
 
     if "priority" in data:
         priority = data["priority"]
@@ -105,7 +116,7 @@ def update_task(task_id):
         task.status = status
 
         if status == "done" and not was_done:
-            task.completed_at = datetime.utcnow()
+            task.completed_at = utcnow()
             log_activity(user.id, "task_completed", "task", task.id)
         elif status != "done":
             task.completed_at = None
