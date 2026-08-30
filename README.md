@@ -1,5 +1,7 @@
 # LaunchPad
 
+**Live Demo:** https://launchpad-5rk9.onrender.com
+
 A lightweight internal tool for teams to track their own tasks and ask each other for help — built around one question: *when someone's stuck, how do they actually get unstuck?*
 
 LaunchPad connects everyday task tracking with peer-to-peer help. A teammate can post what they're stuck on, another teammate can claim it, and both sides get the contact information and practical next steps needed to actually start solving the problem.
